@@ -15,6 +15,8 @@ pub enum Token {
 
     Dot,
 
+    ValueCall,
+
     // Control
     EndOfInput,
 }
@@ -124,6 +126,11 @@ pub fn tokenize(s: &str) -> Vec<Token> {
                 tokens.push(Token::Dot);
             }
 
+            '@' => {
+                it.next();
+                tokens.push(Token::ValueCall);
+            }
+
             _ => {
                 if ch.is_ascii_digit() {
                     tokens.push(Token::Number(lex_number(&mut it)));
@@ -170,6 +177,11 @@ mod tests {
             tokenize("{}"),
             [Token::LeftBrace, Token::RightBrace, Token::EndOfInput,],
         );
+    }
+
+    #[test]
+    fn tokenize_value_call() {
+        assert_eq!(tokenize("@"), [Token::ValueCall, Token::EndOfInput,],);
     }
 
     #[test]

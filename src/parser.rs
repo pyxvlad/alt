@@ -1,4 +1,4 @@
-use crate::ast::{Record, Value};
+use crate::ast::{Call, Record, Value};
 use crate::lexer;
 use std::fmt;
 use std::iter::Peekable;
@@ -62,6 +62,11 @@ where
                 it.next();
                 let records = parse_multiple_records(it, lexer::Token::RightBrace)?;
                 Ok(Value::Object(records))
+            }
+            lexer::Token::ValueCall => {
+                it.next();
+                let call = parse_value_call(it)?;
+                Ok(Value::Call(call))
             }
             _ => Err(ParseError::ExpectedValue),
         },
@@ -128,6 +133,26 @@ where
     Ok(records)
 }
 
+fn parse_value_call<'a, T>(it: &mut Peekable<T>) -> Result<Call, ParseError>
+where
+    T: Iterator<Item = &'a lexer::Token>,
+{
+    match it.peek() {
+        None => Err(ParseError::EndOfInput),
+        Some(token) => match token {
+            lexer::Token::ID(function) => {
+                it.next();
+                let value = parse_value(it)?;
+                Ok(Call {
+                    function: function.to_string(),
+                    value: Box::new(value),
+                })
+            }
+            _ => Err(ParseError::ExpectedIdentifier),
+        },
+    }
+}
+
 pub fn parse(tokens: &[lexer::Token]) -> Result<Vec<Record>, ParseError> {
     let mut it = tokens.iter().peekable();
     parse_multiple_records(&mut it, lexer::Token::EndOfInput)
@@ -163,6 +188,21 @@ mod tests {
         let mut it = tokens.iter().peekable();
         let value = parse_value(&mut it)?;
         assert_eq!(value, Value::Float(4.20));
+        Ok(())
+    }
+
+    #[test]
+    fn parsing_value_call() -> Result<(), ParseError> {
+        let tokens = lexer::tokenize("@call 2");
+        let mut it = tokens.iter().peekable();
+        let value = parse_value(&mut it)?;
+        assert_eq!(
+            value,
+            Value::Call(Call {
+                function: "call".to_string(),
+                value: Box::new(Value::Number(2)),
+            },)
+        );
         Ok(())
     }
 
