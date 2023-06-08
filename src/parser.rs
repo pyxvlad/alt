@@ -40,30 +40,30 @@ where
                     if **token == lexer::Token::Dot {
                         it.next();
                         if let Some(token) = it.peek() {
-                            println!("got {:?}", token);
                             match token {
                                 lexer::Token::Number(n) => {
                                     // see https://stackoverflow.com/a/69298721
                                     let decimals = n.checked_ilog10().unwrap_or(0) + 1;
-                                    let x: f32 = *num as f32
-                                        + 10.0_f32.powi(-(decimals as i32)) * (*n as f32);
+
+                                    let x = 10.0_f32
+                                        .powi(-(decimals as i32))
+                                        .mul_add(*n as f32, *num as f32);
                                     return Ok(Value::Float(x));
                                 }
                                 _ => {
                                     return Err(ParseError::ExpectedNumber);
                                 }
                             }
-                        } else {
-                            return Err(ParseError::EndOfInput);
                         }
+                        return Err(ParseError::EndOfInput);
                     }
                 }
                 Ok(Value::Number(*num))
             }
-            lexer::Token::String(s) => Ok(Value::String(s.to_owned())),
+            lexer::Token::String(s) => Ok(Value::String(s.clone())),
             lexer::Token::LeftBrace => {
                 it.next();
-                let records = parse_multiple_records(it, lexer::Token::RightBrace)?;
+                let records = parse_multiple_records(it, &lexer::Token::RightBrace)?;
                 Ok(Value::Object(records))
             }
             lexer::Token::ValueCall => {
@@ -93,7 +93,7 @@ where
                         let value = parse_value(it)?;
 
                         Ok(Record {
-                            id: id.to_owned(),
+                            id: id.clone(),
                             value,
                         })
                     } else {
@@ -110,7 +110,7 @@ where
 
 fn parse_multiple_records<'a, T>(
     it: &mut Peekable<T>,
-    end: lexer::Token,
+    end: &lexer::Token,
 ) -> Result<Vec<Record>, ParseError>
 where
     T: Iterator<Item = &'a lexer::Token>,
@@ -125,7 +125,7 @@ where
                     records.push(record);
                 }
                 lexer::Token::Separator => (),
-                _ if end == **token => break,
+                _ if end == *token => break,
                 _ => todo!("{:?}", token),
             },
         };
@@ -158,7 +158,7 @@ where
 
 pub fn parse(tokens: &[lexer::Token]) -> Result<Value, ParseError> {
     let mut it = tokens.iter().peekable();
-    let records = parse_multiple_records(&mut it, lexer::Token::EndOfInput)?;
+    let records = parse_multiple_records(&mut it, &lexer::Token::EndOfInput)?;
     Ok(Value::Object(records))
 }
 

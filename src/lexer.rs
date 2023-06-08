@@ -1,6 +1,6 @@
 use std::{iter::Peekable, str::Chars};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Token {
     // Value carrying
     ID(String),
@@ -72,10 +72,9 @@ fn lex_string(it: &mut Peekable<Chars>) -> String {
                 if *ch == '"' {
                     it.next();
                     break;
-                } else {
-                    x.push(*ch);
-                    it.next();
                 }
+                x.push(*ch);
+                it.next();
             }
         }
     }

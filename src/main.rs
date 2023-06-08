@@ -1,9 +1,19 @@
+
+#![warn(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+)]
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cargo_common_metadata)]
+
 mod ast;
 mod eval;
 mod lexer;
 mod parser;
 
-use eval::EvalError;
 use parser::{parse, ParseError};
 use std::collections::HashMap;
 use std::io;
@@ -14,18 +24,18 @@ use crate::ast::Value;
 #[derive(Debug)]
 enum Error {
     Parse(ParseError),
-    Eval(EvalError),
+    Eval(eval::Error),
 }
 
 impl From<ParseError> for Error {
     fn from(value: ParseError) -> Self {
-        Error::Parse(value)
+        Self::Parse(value)
     }
 }
 
-impl From<EvalError> for Error {
-    fn from(value: EvalError) -> Self {
-        Error::Eval(value)
+impl From<eval::Error> for Error {
+    fn from(value: eval::Error) -> Self {
+        Self::Eval(value)
     }
 }
 
@@ -40,12 +50,12 @@ fn main() -> Result<(), Error> {
         .collect::<Vec<String>>()
         .concat();
     let tokens = lexer::tokenize(&s);
-    println!("{:?}", tokens);
+    println!("{tokens:?}");
     println!("I parsed:");
 
     let object = parse(&tokens)?;
     if let Value::Object(ref records) = object {
-        println!("{:?}", records);
+        println!("{records:?}");
 
         for ele in records {
             println!("\t\"{}\": {:?}", ele.id, ele.value);
@@ -59,7 +69,7 @@ fn main() -> Result<(), Error> {
             let result = s.parse::<i32>();
             match result {
                 Ok(num) => Ok(Value::Number(num)),
-                Err(err) => Err(EvalError::Eval(Box::new(err))),
+                Err(err) => Err(eval::Error::Eval(Box::new(err))),
             }
         }
         _ => Ok(x.clone()),
@@ -69,7 +79,7 @@ fn main() -> Result<(), Error> {
     functions.insert("call".to_string(), call);
 
     let value = eval::eval(&object, &functions)?;
-    println!("{:?}", value);
+    println!("{value:?}");
 
     Ok(())
 }

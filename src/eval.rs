@@ -1,32 +1,32 @@
 use crate::ast::{Record, Value};
 use std::collections::HashMap;
-use std::error::Error;
+use std::error::Error as StdError;
 
 #[derive(Debug)]
-pub enum EvalError {
+pub enum Error {
     InvalidFunction,
-    Eval(Box<dyn Error>),
+    Eval(Box<dyn StdError>),
 }
 
-pub type ValueCallFn = fn(&Value) -> Result<Value, EvalError>;
+pub type ValueCallFn = fn(&Value) -> Result<Value, Error>;
 
-pub fn eval(root: &Value, functions: &HashMap<String, ValueCallFn>) -> Result<Value, EvalError> {
+pub fn eval(root: &Value, functions: &HashMap<String, ValueCallFn>) -> Result<Value, Error> {
     match root {
         Value::Call(ref call) => {
             if let Some(call_fn) = functions.get(&call.function) {
                 let value = eval(call.value.as_ref(), functions)?;
                 call_fn(&value)
             } else {
-                Err(EvalError::InvalidFunction)
+                Err(Error::InvalidFunction)
             }
         }
         Value::Object(object) => {
             let mut obj = Vec::new();
             for record in object {
                 obj.push(Record {
-                    id: record.id.to_owned(),
+                    id: record.id.clone(),
                     value: eval(&record.value, functions)?,
-                })
+                });
             }
 
             Ok(Value::Object(obj))
@@ -36,11 +36,12 @@ pub fn eval(root: &Value, functions: &HashMap<String, ValueCallFn>) -> Result<Va
 }
 
 mod tests {
-    use super::*;
+    use super::{eval, Error, Record, Value, ValueCallFn};
     use crate::ast::Call;
+    use std::collections::HashMap;
 
     #[test]
-    fn eval_literal() -> Result<(), EvalError> {
+    fn eval_literal() -> Result<(), Error> {
         let root = Value::Number(25);
         let result = eval(&root, &HashMap::new())?;
         assert_eq!(root, result);
@@ -49,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_call() -> Result<(), EvalError> {
+    fn eval_call() -> Result<(), Error> {
         let call: ValueCallFn = |v| return Ok(v.clone());
         let mut functions = HashMap::new();
         functions.insert("call".to_string(), call);
@@ -66,7 +67,7 @@ mod tests {
     }
 
     #[test]
-    fn eval_call_inside_object() -> Result<(), EvalError> {
+    fn eval_call_inside_object() -> Result<(), Error> {
         let call: ValueCallFn = |v| return Ok(v.clone());
         let mut functions = HashMap::new();
         functions.insert("call".to_string(), call);
