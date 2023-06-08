@@ -3,9 +3,8 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cargo_common_metadata)]
 
-
-
-use alt::parser::{parse, ParseError};
+use alt::parser;
+use alt::parser::parse;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::io;
@@ -17,7 +16,7 @@ use alt::lexer;
 
 #[derive(Debug)]
 enum Error {
-    Parse(ParseError),
+    Parse(parser::Error),
     Eval(eval::Error),
     SerdeJson(serde_json::Error),
     NotName,
@@ -36,8 +35,8 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
-impl From<ParseError> for Error {
-    fn from(value: ParseError) -> Self {
+impl From<parser::Error> for Error {
+    fn from(value: parser::Error) -> Self {
         Self::Parse(value)
     }
 }
@@ -68,7 +67,19 @@ fn main() -> Result<(), Error> {
     println!("{tokens:?}");
     println!("I parsed:");
 
-    let object = parse(&tokens)?;
+    let object = parse(&tokens).or_else(|e| {
+
+        let (left, _) = s.split_at(e.pos.start);
+        let line = left.lines().count() - 1;
+        if let Some(l) = s.lines().nth(line) {
+            println!("Syntax error:");
+            println!("\t{l}");
+
+            println!("\t{}^ {e}", " ".repeat(e.pos.start));
+        }
+
+        Err(e)
+    })?;
     if let Value::Object(ref records) = object {
         println!("{records:?}");
 
@@ -110,7 +121,6 @@ fn main() -> Result<(), Error> {
     let json = serde_json::to_string_pretty(&value)?;
 
     println!("{json}");
-
 
     Ok(())
 }

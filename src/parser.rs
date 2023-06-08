@@ -1,11 +1,11 @@
 use crate::ast::{Call, Record, Value};
-use crate::lexer;
-use std::error::Error;
+use crate::lexer::{self, FilePos};
+use std::error::Error as StdError;
 use std::fmt;
 use std::iter::Peekable;
 
 #[derive(Debug, Clone)]
-pub enum ParseError {
+pub enum ErrorTypes {
     EndOfInput,
     ExpectedIdentifier,
     ExpectedValue,
@@ -13,9 +13,7 @@ pub enum ParseError {
     ExpectedNumber,
 }
 
-impl Error for ParseError {}
-
-impl fmt::Display for ParseError {
+impl fmt::Display for ErrorTypes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::EndOfInput => write!(f, "reached end of input while expecting more"),
@@ -27,67 +25,98 @@ impl fmt::Display for ParseError {
     }
 }
 
-fn parse_value<'a, T>(it: &mut Peekable<T>) -> Result<Value, ParseError>
+#[derive(Debug)]
+pub struct Error {
+    pub error: ErrorTypes,
+    pub pos: FilePos,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at {}", self.error, self.pos)
+    }
+}
+
+impl StdError for Error {}
+
+fn parse_value<'a, T>(it: &mut Peekable<T>) -> Result<Value, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
     match it.peek() {
-        None => Err(ParseError::EndOfInput),
-        Some(token) => match token {
-            lexer::Token::Number(num) => {
+        None => Err(Error {
+            error: ErrorTypes::EndOfInput,
+            pos: Default::default(),
+        }),
+        Some(token) => match &token.kind {
+            lexer::TokenKind::Number(num) => {
                 it.next();
                 if let Some(token) = it.peek() {
-                    if **token == lexer::Token::Dot {
+                    if token.kind == lexer::TokenKind::Dot {
+                        let token = token.clone();
                         it.next();
                         if let Some(token) = it.peek() {
-                            match token {
-                                lexer::Token::Number(n) => {
+                            match token.kind {
+                                lexer::TokenKind::Number(n) => {
                                     // see https://stackoverflow.com/a/69298721
                                     let decimals = n.checked_ilog10().unwrap_or(0) + 1;
 
                                     let x = 10.0_f32
                                         .powi(-(decimals as i32))
-                                        .mul_add(*n as f32, *num as f32);
+                                        .mul_add(n as f32, *num as f32);
                                     return Ok(Value::Float(x));
                                 }
                                 _ => {
-                                    return Err(ParseError::ExpectedNumber);
+                                    return Err(Error {
+                                        error: ErrorTypes::ExpectedNumber,
+                                        pos: token.pos,
+                                    });
                                 }
                             }
                         }
-                        return Err(ParseError::EndOfInput);
+                        return Err(Error {
+                            error: ErrorTypes::EndOfInput,
+                            pos: token.pos,
+                        });
                     }
                 }
                 Ok(Value::Number(*num))
             }
-            lexer::Token::String(s) => Ok(Value::String(s.clone())),
-            lexer::Token::LeftBrace => {
+            lexer::TokenKind::String(s) => Ok(Value::String(s.clone())),
+            lexer::TokenKind::LeftBrace => {
                 it.next();
-                let records = parse_multiple_records(it, &lexer::Token::RightBrace)?;
+                let records = parse_multiple_records(it, &lexer::TokenKind::RightBrace)?;
                 Ok(Value::Object(records))
             }
-            lexer::Token::ValueCall => {
+            lexer::TokenKind::ValueCall => {
                 it.next();
                 let call = parse_value_call(it)?;
                 Ok(Value::Call(call))
             }
-            _ => Err(ParseError::ExpectedValue),
+            _ => Err(Error {
+                error: ErrorTypes::ExpectedValue,
+                pos: token.pos,
+            }),
         },
     }
 }
 
-fn parse_record<'a, T>(it: &mut Peekable<T>) -> Result<Record, ParseError>
+fn parse_record<'a, T>(it: &mut Peekable<T>) -> Result<Record, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
     match it.peek() {
-        None => Err(ParseError::EndOfInput),
-        Some(token) => match token {
-            lexer::Token::ID(id) => {
+        None => Err(Error {
+            error: ErrorTypes::EndOfInput,
+            pos: Default::default(),
+        }),
+        Some(token) => match &token.kind {
+            lexer::TokenKind::ID(id) => {
+                let token = token.clone();
                 it.next();
 
                 if let Some(token) = it.peek() {
-                    if **token == lexer::Token::Assign {
+                    if token.kind == lexer::TokenKind::Assign {
                         it.next();
 
                         let value = parse_value(it)?;
@@ -97,35 +126,49 @@ where
                             value,
                         })
                     } else {
-                        Err(ParseError::ExpectedAssign)
+                        Err(Error {
+                            error: ErrorTypes::ExpectedAssign,
+                            pos: token.pos,
+                        })
                     }
                 } else {
-                    Err(ParseError::EndOfInput)
+                    Err(Error {
+                        error: ErrorTypes::EndOfInput,
+                        pos: token.pos,
+                    })
                 }
             }
-            _ => Err(ParseError::ExpectedIdentifier),
+            _ => Err(Error {
+                error: ErrorTypes::ExpectedIdentifier,
+                pos: token.pos,
+            }),
         },
     }
 }
 
 fn parse_multiple_records<'a, T>(
     it: &mut Peekable<T>,
-    end: &lexer::Token,
-) -> Result<Vec<Record>, ParseError>
+    end: &lexer::TokenKind,
+) -> Result<Vec<Record>, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
     let mut records: Vec<Record> = Vec::new();
     loop {
         match it.peek() {
-            None => return Err(ParseError::EndOfInput),
-            Some(token) => match token {
-                lexer::Token::ID(_) => {
+            None => {
+                return Err(Error {
+                    error: ErrorTypes::EndOfInput,
+                    pos: Default::default(),
+                })
+            }
+            Some(token) => match token.kind {
+                lexer::TokenKind::ID(_) => {
                     let record = parse_record(it)?;
                     records.push(record);
                 }
-                lexer::Token::Separator => (),
-                _ if end == *token => break,
+                lexer::TokenKind::Separator => (),
+                _ if *end == token.kind => break,
                 _ => todo!("{:?}", token),
             },
         };
@@ -136,14 +179,17 @@ where
     Ok(records)
 }
 
-fn parse_value_call<'a, T>(it: &mut Peekable<T>) -> Result<Call, ParseError>
+fn parse_value_call<'a, T>(it: &mut Peekable<T>) -> Result<Call, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
     match it.peek() {
-        None => Err(ParseError::EndOfInput),
-        Some(token) => match token {
-            lexer::Token::ID(function) => {
+        None => Err(Error {
+            error: ErrorTypes::EndOfInput,
+            pos: Default::default(),
+        }),
+        Some(token) => match &token.kind {
+            lexer::TokenKind::ID(function) => {
                 it.next();
                 let value = parse_value(it)?;
                 Ok(Call {
@@ -151,14 +197,17 @@ where
                     value: Box::new(value),
                 })
             }
-            _ => Err(ParseError::ExpectedIdentifier),
+            _ => Err(Error {
+                error: ErrorTypes::ExpectedIdentifier,
+                pos: token.pos.clone(),
+            }),
         },
     }
 }
 
-pub fn parse(tokens: &[lexer::Token]) -> Result<Value, ParseError> {
+pub fn parse(tokens: &[lexer::Token]) -> Result<Value, Error> {
     let mut it = tokens.iter().peekable();
-    let records = parse_multiple_records(&mut it, &lexer::Token::EndOfInput)?;
+    let records = parse_multiple_records(&mut it, &lexer::TokenKind::EndOfInput)?;
     Ok(Value::Object(records))
 }
 
@@ -167,7 +216,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parsing_number_value() -> Result<(), ParseError> {
+    fn parsing_number_value() -> Result<(), Error> {
         let tokens = lexer::tokenize("42");
 
         let mut it = tokens.iter().peekable();
@@ -178,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_string_value() -> Result<(), ParseError> {
+    fn parsing_string_value() -> Result<(), Error> {
         let tokens = lexer::tokenize("\"some\"");
         let mut it = tokens.iter().peekable();
         let value = parse_value(&mut it)?;
@@ -187,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_float_value() -> Result<(), ParseError> {
+    fn parsing_float_value() -> Result<(), Error> {
         let tokens = lexer::tokenize("4.20");
         let mut it = tokens.iter().peekable();
         let value = parse_value(&mut it)?;
@@ -196,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn parsing_value_call() -> Result<(), ParseError> {
+    fn parsing_value_call() -> Result<(), Error> {
         let tokens = lexer::tokenize("@call 2");
         let mut it = tokens.iter().peekable();
         let value = parse_value(&mut it)?;
@@ -211,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_record() -> Result<(), ParseError> {
+    fn test_parse_record() -> Result<(), Error> {
         let tokens = lexer::tokenize("x = 2");
 
         let mut it = tokens.iter().peekable();
