@@ -1,11 +1,24 @@
-use crate::ast::{Record, Value};
+use crate::ast::{Record, Typed, Value};
 use std::collections::HashMap;
 use std::error::Error as StdError;
+use std::fmt::Display;
 
 #[derive(Debug)]
 pub enum Error {
     InvalidFunction,
     Eval(Box<dyn StdError>),
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidFunction => write!(f, "invalid function"),
+            Self::Eval(err) => write!(f, "function eval error: {err}")
+        }
+    }
+}
+
+impl StdError for Error {
 }
 
 pub type ValueCallFn = fn(&Value) -> Result<Value, Error>;
@@ -30,6 +43,13 @@ pub fn eval(root: &Value, functions: &HashMap<String, ValueCallFn>) -> Result<Va
             }
 
             Ok(Value::Object(obj))
+        }
+        Value::Typed(t) => {
+            let value = eval(&t.value, functions)?;
+            Ok(Value::Typed(Typed {
+                kind: t.kind.clone(),
+                value: Box::new(value),
+            }))
         }
         Value::Float(_) | Value::Number(_) | Value::String(_) => Ok(root.clone()),
     }

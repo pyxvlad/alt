@@ -1,32 +1,40 @@
-
-#![warn(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::cargo,
-)]
+#![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
 #![allow(clippy::cast_precision_loss)]
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cargo_common_metadata)]
 
-mod ast;
-mod eval;
-mod lexer;
-mod parser;
 
-use parser::{parse, ParseError};
+
+use alt::parser::{parse, ParseError};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::io;
 use std::io::BufRead;
 
-use crate::ast::Value;
+use alt::ast::Value;
+use alt::eval;
+use alt::lexer;
 
 #[derive(Debug)]
 enum Error {
     Parse(ParseError),
     Eval(eval::Error),
     SerdeJson(serde_json::Error),
+    NotName,
 }
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parse(err) => write!(f, "parser error: {err}"),
+            Self::Eval(err) => write!(f, "evaluation error: {err}"),
+            Self::SerdeJson(err) => write!(f, "serde_json error: {err}"),
+            Self::NotName => write!(f, "not a possible cat name"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 impl From<ParseError> for Error {
     fn from(value: ParseError) -> Self {
@@ -82,8 +90,17 @@ fn main() -> Result<(), Error> {
         _ => Ok(x.clone()),
     };
 
+    let pisoi: eval::ValueCallFn = |x| match x {
+        Value::String(_) => Ok(Value::Typed(alt::ast::Typed {
+            kind: "pisoi".to_string(),
+            value: Box::new(x.clone()),
+        })),
+        _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
+    };
+
     let mut functions = HashMap::new();
     functions.insert("call".to_string(), call);
+    functions.insert("pisoi".to_string(), pisoi);
 
     let value = eval::eval(&object, &functions)?;
     println!("{value:?}");
@@ -93,6 +110,7 @@ fn main() -> Result<(), Error> {
     let json = serde_json::to_string_pretty(&value)?;
 
     println!("{json}");
+
 
     Ok(())
 }

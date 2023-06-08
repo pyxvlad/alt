@@ -1,4 +1,5 @@
-use serde::{Serialize, ser::SerializeMap};
+use serde::ser::SerializeMap;
+use serde::Serialize;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
@@ -7,12 +8,14 @@ pub enum Value {
     String(String),
     Object(Vec<Record>),
     Call(Call),
+    Typed(Typed),
 }
 
 impl Serialize for Value {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         match self {
             Self::Number(n) => serializer.serialize_i32(*n),
             Self::Float(f) => serializer.serialize_f32(*f),
@@ -24,10 +27,26 @@ impl Serialize for Value {
                 }
                 map.end()
             }
-            Self::Call(c) => {
-                serializer.serialize_newtype_variant("Value", 5, "Call", c)
+            Self::Call(_) => {
+                unimplemented!("calls should be evaluated");
             }
+            Self::Typed(t) => t.serialize(serializer),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Typed {
+    pub kind: String,
+    pub value: Box<Value>,
+}
+
+impl Serialize for Typed {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.value.serialize(serializer)
     }
 }
 
