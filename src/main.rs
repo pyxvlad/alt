@@ -25,6 +25,7 @@ use crate::ast::Value;
 enum Error {
     Parse(ParseError),
     Eval(eval::Error),
+    SerdeJson(serde_json::Error),
 }
 
 impl From<ParseError> for Error {
@@ -36,6 +37,12 @@ impl From<ParseError> for Error {
 impl From<eval::Error> for Error {
     fn from(value: eval::Error) -> Self {
         Self::Eval(value)
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(value: serde_json::Error) -> Self {
+        Self::SerdeJson(value)
     }
 }
 
@@ -80,6 +87,12 @@ fn main() -> Result<(), Error> {
 
     let value = eval::eval(&object, &functions)?;
     println!("{value:?}");
+
+    println!("JSON Value:");
+
+    let json = serde_json::to_string_pretty(&value)?;
+
+    println!("{json}");
 
     Ok(())
 }

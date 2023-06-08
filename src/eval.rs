@@ -35,6 +35,7 @@ pub fn eval(root: &Value, functions: &HashMap<String, ValueCallFn>) -> Result<Va
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::{eval, Error, Record, Value, ValueCallFn};
     use crate::ast::Call;
