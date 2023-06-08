@@ -1,5 +1,6 @@
 use crate::ast::{Call, Record, Value};
 use crate::lexer;
+use std::error::Error;
 use std::fmt;
 use std::iter::Peekable;
 
@@ -11,6 +12,8 @@ pub enum ParseError {
     ExpectedAssign,
     ExpectedNumber,
 }
+
+impl Error for ParseError {}
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -153,9 +156,10 @@ where
     }
 }
 
-pub fn parse(tokens: &[lexer::Token]) -> Result<Vec<Record>, ParseError> {
+pub fn parse(tokens: &[lexer::Token]) -> Result<Value, ParseError> {
     let mut it = tokens.iter().peekable();
-    parse_multiple_records(&mut it, lexer::Token::EndOfInput)
+    let records = parse_multiple_records(&mut it, lexer::Token::EndOfInput)?;
+    Ok(Value::Object(records))
 }
 
 #[cfg(test)]

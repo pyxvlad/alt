@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Number(i32),
     Float(f32),
@@ -7,13 +7,13 @@ pub enum Value {
     Call(Call),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Call {
     pub function: String,
     pub value: Box<Value>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Record {
     pub id: String,
     pub value: Value,
