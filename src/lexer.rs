@@ -17,6 +17,7 @@ pub enum TokenKind {
     Dot,
 
     ValueCall,
+    RecordCall,
 
     // Control
     #[default]
@@ -103,7 +104,7 @@ fn lex_ident(it: &mut Peekable<CharIndices>) -> Token {
                     first = false;
                     token.pos.start = *pos;
                 }
-                if ch.is_alphanumeric() {
+                if ch.is_alphanumeric() || *ch == '-' || *ch == '_' {
                     x.push(*ch);
                     it.next();
                 } else {
@@ -239,6 +240,18 @@ pub fn tokenize(s: &str) -> Vec<Token> {
                 continue;
             }
 
+            '#' => {
+                it.next();
+                tokens.push(Token {
+                    pos: FilePos {
+                        start: pos,
+                        end: pos + 1,
+                    },
+                    kind: TokenKind::RecordCall,
+                });
+                continue;
+            }
+
             _ if ch.is_ascii_digit() => {
                 tokens.push(lex_number(&mut it));
                 continue;
@@ -312,6 +325,17 @@ mod tests {
                 .map(|t| t.kind.clone())
                 .collect::<Vec<TokenKind>>(),
             [TokenKind::ValueCall, TokenKind::EndOfInput,],
+        );
+    }
+
+    #[test]
+    fn tokenize_record_call() {
+        assert_eq!(
+            tokenize("#")
+                .iter()
+                .map(|t| t.kind.clone())
+                .collect::<Vec<TokenKind>>(),
+            [TokenKind::RecordCall, TokenKind::EndOfInput,],
         );
     }
 

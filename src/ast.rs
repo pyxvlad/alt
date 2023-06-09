@@ -6,7 +6,7 @@ pub enum Value {
     Number(i32),
     Float(f32),
     String(String),
-    Object(Vec<Record>),
+    Object(Vec<RecordOrCall>),
     Call(Call),
     Typed(Typed),
 }
@@ -23,7 +23,10 @@ impl Serialize for Value {
             Self::Object(v) => {
                 let mut map = serializer.serialize_map(Some(v.len()))?;
                 for record in v {
-                    map.serialize_entry(&record.id, &record.value)?;
+                    match record {
+                        RecordOrCall::Call(c) => map.serialize_entry(&c.function, &c.value)?,
+                        RecordOrCall::Record(r) => map.serialize_entry(&r.id, &r.value)?,
+                    }
                 }
                 map.end()
             }
@@ -60,4 +63,23 @@ pub struct Call {
 pub struct Record {
     pub id: String,
     pub value: Value,
+}
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
+#[serde(untagged)]
+pub enum RecordOrCall {
+    Record(Record),
+    Call(Call),
+}
+
+impl From<Record> for RecordOrCall {
+    fn from(value: Record) -> Self {
+        Self::Record(value)
+    }
+}
+
+impl From<Call> for RecordOrCall {
+    fn from(value: Call) -> Self {
+        Self::Call(value)
+    }
 }

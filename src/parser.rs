@@ -1,4 +1,4 @@
-use crate::ast::{Call, Record, Value};
+use crate::ast::{Call, Record, RecordOrCall, Value};
 use crate::lexer::{self, FilePos};
 use std::error::Error as StdError;
 use std::fmt;
@@ -90,7 +90,7 @@ where
             }
             lexer::TokenKind::ValueCall => {
                 it.next();
-                let call = parse_value_call(it)?;
+                let call = parse_call(it)?;
                 Ok(Value::Call(call))
             }
             _ => Err(Error {
@@ -101,7 +101,7 @@ where
     }
 }
 
-fn parse_record<'a, T>(it: &mut Peekable<T>) -> Result<Record, Error>
+fn parse_record<'a, T>(it: &mut Peekable<T>) -> Result<RecordOrCall, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
@@ -124,7 +124,8 @@ where
                         Ok(Record {
                             id: id.clone(),
                             value,
-                        })
+                        }
+                        .into())
                     } else {
                         Err(Error {
                             error: ErrorTypes::ExpectedAssign,
@@ -149,11 +150,11 @@ where
 fn parse_multiple_records<'a, T>(
     it: &mut Peekable<T>,
     end: &lexer::TokenKind,
-) -> Result<Vec<Record>, Error>
+) -> Result<Vec<RecordOrCall>, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
-    let mut records: Vec<Record> = Vec::new();
+    let mut records = Vec::new();
     loop {
         match it.peek() {
             None => {
@@ -167,6 +168,12 @@ where
                     let record = parse_record(it)?;
                     records.push(record);
                 }
+                lexer::TokenKind::RecordCall => {
+                    it.next();
+                    let call = parse_call(it)?;
+                    records.push(call.into());
+                }
+
                 lexer::TokenKind::Separator => (),
                 _ if *end == token.kind => break,
                 _ => todo!("{:?}", token),
@@ -179,7 +186,7 @@ where
     Ok(records)
 }
 
-fn parse_value_call<'a, T>(it: &mut Peekable<T>) -> Result<Call, Error>
+fn parse_call<'a, T>(it: &mut Peekable<T>) -> Result<Call, Error>
 where
     T: Iterator<Item = &'a lexer::Token>,
 {
@@ -272,6 +279,7 @@ mod tests {
                 id: "x".to_string(),
                 value: Value::Number(2),
             }
+            .into()
         );
 
         Ok(())

@@ -1,4 +1,4 @@
-use crate::ast::{Record, Typed, Value};
+use crate::ast::{Record, RecordOrCall, Typed, Value};
 use std::error::Error as StdError;
 use std::fmt::Display;
 
@@ -20,15 +20,18 @@ impl Display for Error {
 impl StdError for Error {}
 
 pub type ValueCallFn<'a> = &'a dyn Fn(&Value) -> Result<Value, Error>;
+pub type RecordCallFn<'a> = &'a dyn Fn(&Value) -> Result<Record, Error>;
 
-pub fn eval<'a, F>(root: &'a Value, functions: &F) -> Result<Value, Error>
+
+pub fn eval<'a, VF, RF>(root: &'a Value, value_functions: &VF, record_functions: &RF) -> Result<Value, Error>
 where
-    F: Fn(&str) -> Option<ValueCallFn<'a>>,
+    VF: Fn(&str) -> Option<ValueCallFn<'a>>,
+    RF: Fn(&str) -> Option<RecordCallFn<'a>>,
 {
     match root {
         Value::Call(ref call) => {
-            if let Some(call_fn) = functions(&call.function) {
-                let value = eval(call.value.as_ref(), functions)?;
+            if let Some(call_fn) = value_functions(&call.function) {
+                let value = eval(call.value.as_ref(), value_functions, record_functions)?;
                 call_fn(&value)
             } else {
                 Err(Error::InvalidFunction)
@@ -37,16 +40,28 @@ where
         Value::Object(object) => {
             let mut obj = Vec::new();
             for record in object {
-                obj.push(Record {
-                    id: record.id.clone(),
-                    value: eval(&record.value, functions)?,
-                });
+                match record {
+                    RecordOrCall::Record(record) => obj.push(
+                        Record {
+                            id: record.id.clone(),
+                            value: eval(&record.value, value_functions, record_functions)?,
+                        }
+                        .into(),
+                    ),
+                    RecordOrCall::Call(call) => {
+                        if let Some(call_fn) = record_functions(&call.function) {
+                            let value = eval(call.value.as_ref(), value_functions, record_functions)?;
+                            let rec = call_fn(&value)?;
+                            obj.push(rec.into());
+                        }
+                    },
+                }
             }
 
             Ok(Value::Object(obj))
         }
         Value::Typed(t) => {
-            let value = eval(&t.value, functions)?;
+            let value = eval(&t.value, value_functions, record_functions)?;
             Ok(Value::Typed(Typed {
                 kind: t.kind.clone(),
                 value: Box::new(value),
@@ -65,7 +80,7 @@ mod tests {
     #[test]
     fn eval_literal() -> Result<(), Error> {
         let root = Value::Number(25);
-        let result = eval(&root, &|_| None)?;
+        let result = eval(&root, &|_| None, &|_|None)?;
         assert_eq!(root, result);
 
         Ok(())
@@ -82,7 +97,7 @@ mod tests {
             value: Box::new(value.clone()),
         });
 
-        let result = eval(&root, &move |s| functions.get(s).copied())?;
+        let result = eval(&root, &move |s| functions.get(s).copied(), &|_|None)?;
 
         assert_eq!(result, value);
         Ok(())
@@ -100,16 +115,16 @@ mod tests {
                 function: "call".to_string(),
                 value: Box::new(value.clone()),
             }),
-        }]);
+        }.into()]);
 
-        let result = eval(&root, &move |s| functions.get(s).copied())?;
+        let result = eval(&root, &move |s| functions.get(s).copied(), &|_|None)?;
 
         assert_eq!(
             result,
             Value::Object(vec![Record {
                 id: "some".to_string(),
                 value: value
-            }])
+            }.into()])
         );
 
         Ok(())

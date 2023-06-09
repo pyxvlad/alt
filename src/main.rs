@@ -83,7 +83,7 @@ fn main() -> Result<(), Error> {
         println!("{records:?}");
 
         for ele in records {
-            println!("\t\"{}\": {:?}", ele.id, ele.value);
+            println!("\t{:?}", ele);
         }
     }
 
@@ -114,12 +114,30 @@ fn main() -> Result<(), Error> {
         }
     };
 
-    let value = eval::eval(&object, &|s| match s {
-        "call" => Some(call),
-        "pisoi" => Some(pisoi),
-        "itoa" => Some(itoa),
-        _ => None,
-    })?;
+    let pisoi_record: eval::RecordCallFn = &|x| match x {
+        Value::String(s) => Ok(alt::ast::Record {
+            id: s.clone(),
+            value: Value::Typed(alt::ast::Typed {
+                kind: "pisoi".to_string(),
+                value: Box::new(x.clone()),
+            }),
+        }),
+        _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
+    };
+
+    let value = eval::eval(
+        &object,
+        &|s| match s {
+            "call" => Some(call),
+            "pisoi" => Some(pisoi),
+            "itoa" => Some(itoa),
+            _ => None,
+        },
+        &|s| match s {
+            "pisoi" => Some(pisoi_record),
+            _ => None,
+        },
+    )?;
 
     println!("{value:?}");
 
