@@ -86,7 +86,7 @@ where
             lexer::TokenKind::LeftBrace => {
                 it.next();
                 let records = parse_multiple_records(it, &lexer::TokenKind::RightBrace)?;
-                Ok(Value::Object(records))
+                Ok(Value::ObjectWithCalls(records))
             }
             lexer::TokenKind::ValueCall => {
                 it.next();
@@ -215,7 +215,7 @@ where
 pub fn parse(tokens: &[lexer::Token]) -> Result<Value, Error> {
     let mut it = tokens.iter().peekable();
     let records = parse_multiple_records(&mut it, &lexer::TokenKind::EndOfInput)?;
-    Ok(Value::Object(records))
+    Ok(Value::ObjectWithCalls(records))
 }
 
 #[cfg(test)]

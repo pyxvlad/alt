@@ -1,4 +1,4 @@
-use crate::ast::{Record, RecordOrCall, Typed, Value};
+use crate::ast::{Call, Record, RecordOrCall, Typed, Value};
 use std::error::Error as StdError;
 use std::fmt::Display;
 
@@ -19,68 +19,108 @@ impl Display for Error {
 
 impl StdError for Error {}
 
-pub type ValueCallFn<'a> = &'a dyn Fn(&Value) -> Result<Value, Error>;
-pub type RecordCallFn<'a> = &'a dyn Fn(&Value) -> Result<Record, Error>;
+pub trait Evaluator {
+    fn value_function_eval(&mut self, call: &Call) -> Result<Value, Error>;
+    fn record_function_eval(&mut self, call: &Call) -> Result<Option<Record>, Error>;
 
-
-pub fn eval<'a, VF, RF>(root: &'a Value, value_functions: &VF, record_functions: &RF) -> Result<Value, Error>
-where
-    VF: Fn(&str) -> Option<ValueCallFn<'a>>,
-    RF: Fn(&str) -> Option<RecordCallFn<'a>>,
-{
-    match root {
-        Value::Call(ref call) => {
-            if let Some(call_fn) = value_functions(&call.function) {
-                let value = eval(call.value.as_ref(), value_functions, record_functions)?;
-                call_fn(&value)
-            } else {
-                Err(Error::InvalidFunction)
+    fn eval(&mut self, root: &Value) -> Result<Value, Error> {
+        match root {
+            Value::Call(ref call) => {
+                let boxed = Box::new(self.eval(call.value.as_ref())?);
+                self.value_function_eval(&Call {
+                    value: boxed,
+                    function: call.function.to_string(),
+                })
             }
-        }
-        Value::Object(object) => {
-            let mut obj = Vec::new();
-            for record in object {
-                match record {
-                    RecordOrCall::Record(record) => obj.push(
-                        Record {
-                            id: record.id.clone(),
-                            value: eval(&record.value, value_functions, record_functions)?,
+            Value::ObjectWithCalls(object) => {
+                let mut obj = Vec::new();
+                for record in object {
+                    match record {
+                        RecordOrCall::Record(record) => obj.push(
+                            Record {
+                                id: record.id.clone(),
+                                value: self.eval(&record.value)?,
+                            }
+                            .into(),
+                        ),
+                        RecordOrCall::Call(call) => {
+                            let boxed = Box::new(self.eval(call.value.as_ref())?);
+                            let optional = self.record_function_eval(&Call {
+                                function: call.function.to_string(),
+                                value: boxed,
+                            })?;
+                            if let Some(rec) = optional {
+                                obj.push(rec.into());
+                            }
                         }
-                        .into(),
-                    ),
-                    RecordOrCall::Call(call) => {
-                        if let Some(call_fn) = record_functions(&call.function) {
-                            let value = eval(call.value.as_ref(), value_functions, record_functions)?;
-                            let rec = call_fn(&value)?;
-                            obj.push(rec.into());
-                        }
-                    },
+                    }
                 }
-            }
 
-            Ok(Value::Object(obj))
+                Ok(Value::Object(obj))
+            }
+            Value::Typed(t) => {
+                let value = self.eval(&t.value)?;
+                Ok(Value::Typed(Typed {
+                    kind: t.kind.clone(),
+                    value: Box::new(value),
+                }))
+            }
+            Value::Float(_) | Value::Number(_) | Value::String(_) | Value::Object(_) => {
+                Ok(root.clone())
+            }
         }
-        Value::Typed(t) => {
-            let value = eval(&t.value, value_functions, record_functions)?;
-            Ok(Value::Typed(Typed {
-                kind: t.kind.clone(),
-                value: Box::new(value),
-            }))
-        }
-        Value::Float(_) | Value::Number(_) | Value::String(_) => Ok(root.clone()),
     }
+}
+
+pub fn eval<'a, VF, RF>(
+    root: &Value,
+    value_functions: &mut VF,
+    record_functions: &mut RF,
+) -> Result<Value, Error>
+where
+    VF: FnMut(&Call) -> Result<Value, Error>,
+    RF: FnMut(&Call) -> Result<Option<Record>, Error>,
+{
+    struct T<'a, TVF, TRF>
+    where
+        TVF: FnMut(&Call) -> Result<Value, Error>,
+        TRF: FnMut(&Call) -> Result<Option<Record>, Error>,
+    {
+        vf: &'a mut TVF,
+        rf: &'a mut TRF,
+    }
+
+    impl<'a, TVF, TRF> Evaluator for T<'_, TVF, TRF>
+    where
+        TVF: FnMut(&Call) -> Result<Value, Error>,
+        TRF: FnMut(&Call) -> Result<Option<Record>, Error>,
+    {
+        fn value_function_eval(&mut self, call: &Call) -> Result<Value, Error> {
+            (self.vf)(call)
+        }
+        fn record_function_eval(&mut self, call: &Call) -> Result<Option<Record>, Error> {
+            (self.rf)(call)
+        }
+    }
+
+    let mut t = T{vf: value_functions, rf: record_functions};
+    t.eval(root)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{eval, Error, Record, Value, ValueCallFn};
+    use super::{eval, Error, Record, Value};
     use crate::ast::Call;
     use std::collections::HashMap;
 
     #[test]
     fn eval_literal() -> Result<(), Error> {
         let root = Value::Number(25);
-        let result = eval(&root, &|_| None, &|_|None)?;
+        type VFRet<'a> = Option<&'a dyn Fn(&Value) -> Result<Value, Error>>;
+
+        let result = eval(&root, &mut |_| Err(Error::InvalidFunction), &mut |_| {
+            Err(Error::InvalidFunction)
+        })?;
         assert_eq!(root, result);
 
         Ok(())
@@ -88,16 +128,24 @@ mod tests {
 
     #[test]
     fn eval_call() -> Result<(), Error> {
-        let call: ValueCallFn = &|v| return Ok(v.clone());
+        let mut call = |v: &Value| return Ok(v.clone());
         let mut functions = HashMap::new();
-        functions.insert("call".to_string(), call);
+        functions.insert("call".to_string(), &mut call);
         let value = Value::Number(2);
         let root = Value::Call(Call {
             function: "call".to_string(),
             value: Box::new(value.clone()),
         });
-
-        let result = eval(&root, &move |s| functions.get(s).copied(), &|_|None)?;
+        let result = eval(
+            &root,
+            &mut |c| {
+                functions
+                    .get_mut(&c.function)
+                    .and_then(|a| Some(a(&c.value)))
+                    .ok_or(Error::InvalidFunction)?
+            },
+            &mut |_| Err(Error::InvalidFunction),
+        )?;
 
         assert_eq!(result, value);
         Ok(())
@@ -105,26 +153,37 @@ mod tests {
 
     #[test]
     fn eval_call_inside_object() -> Result<(), Error> {
-        let call: ValueCallFn = &|v| return Ok(v.clone());
+        let mut call = |v: &Value| return Ok(v.clone());
         let mut functions = HashMap::new();
-        functions.insert("call".to_string(), call);
+        functions.insert("call".to_string(), &mut call);
         let value = Value::Number(2);
-        let root = Value::Object(vec![Record {
+        let root = Value::ObjectWithCalls(vec![Record {
             id: "some".to_string(),
             value: Value::Call(Call {
                 function: "call".to_string(),
                 value: Box::new(value.clone()),
             }),
-        }.into()]);
+        }
+        .into()]);
 
-        let result = eval(&root, &move |s| functions.get(s).copied(), &|_|None)?;
+        let result = eval(
+            &root,
+            &mut |c| {
+                functions
+                    .get_mut(&c.function)
+                    .and_then(|a| Some(a(&c.value)))
+                    .ok_or(Error::InvalidFunction)?
+            },
+            &mut |_| Err(Error::InvalidFunction),
+        )?;
 
         assert_eq!(
             result,
             Value::Object(vec![Record {
                 id: "some".to_string(),
                 value: value
-            }.into()])
+            }
+            .into()])
         );
 
         Ok(())

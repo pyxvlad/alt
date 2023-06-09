@@ -6,7 +6,8 @@ pub enum Value {
     Number(i32),
     Float(f32),
     String(String),
-    Object(Vec<RecordOrCall>),
+    ObjectWithCalls(Vec<RecordOrCall>),
+    Object(Vec<Record>),
     Call(Call),
     Typed(Typed),
 }
@@ -20,13 +21,20 @@ impl Serialize for Value {
             Self::Number(n) => serializer.serialize_i32(*n),
             Self::Float(f) => serializer.serialize_f32(*f),
             Self::String(s) => serializer.serialize_str(s),
-            Self::Object(v) => {
+            Self::ObjectWithCalls(v) => {
                 let mut map = serializer.serialize_map(Some(v.len()))?;
                 for record in v {
                     match record {
                         RecordOrCall::Call(c) => map.serialize_entry(&c.function, &c.value)?,
                         RecordOrCall::Record(r) => map.serialize_entry(&r.id, &r.value)?,
                     }
+                }
+                map.end()
+            }
+            Self::Object(v) => {
+                let mut map = serializer.serialize_map(Some(v.len()))?;
+                for record in v {
+                    map.serialize_entry(&record.id, &record.value)?;
                 }
                 map.end()
             }
