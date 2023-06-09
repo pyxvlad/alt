@@ -1,5 +1,4 @@
 use crate::ast::{Record, Typed, Value};
-use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::fmt::Display;
 
@@ -13,20 +12,22 @@ impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidFunction => write!(f, "invalid function"),
-            Self::Eval(err) => write!(f, "function eval error: {err}")
+            Self::Eval(err) => write!(f, "function eval error: {err}"),
         }
     }
 }
 
-impl StdError for Error {
-}
+impl StdError for Error {}
 
-pub type ValueCallFn = fn(&Value) -> Result<Value, Error>;
+pub type ValueCallFn<'a> = &'a dyn Fn(&Value) -> Result<Value, Error>;
 
-pub fn eval(root: &Value, functions: &HashMap<String, ValueCallFn>) -> Result<Value, Error> {
+pub fn eval<'a, F>(root: &'a Value, functions: &F) -> Result<Value, Error>
+where
+    F: Fn(&str) -> Option<ValueCallFn<'a>>,
+{
     match root {
         Value::Call(ref call) => {
-            if let Some(call_fn) = functions.get(&call.function) {
+            if let Some(call_fn) = functions(&call.function) {
                 let value = eval(call.value.as_ref(), functions)?;
                 call_fn(&value)
             } else {
@@ -64,7 +65,7 @@ mod tests {
     #[test]
     fn eval_literal() -> Result<(), Error> {
         let root = Value::Number(25);
-        let result = eval(&root, &HashMap::new())?;
+        let result = eval(&root, &|_| None)?;
         assert_eq!(root, result);
 
         Ok(())
@@ -72,7 +73,7 @@ mod tests {
 
     #[test]
     fn eval_call() -> Result<(), Error> {
-        let call: ValueCallFn = |v| return Ok(v.clone());
+        let call: ValueCallFn = &|v| return Ok(v.clone());
         let mut functions = HashMap::new();
         functions.insert("call".to_string(), call);
         let value = Value::Number(2);
@@ -81,7 +82,7 @@ mod tests {
             value: Box::new(value.clone()),
         });
 
-        let result = eval(&root, &functions)?;
+        let result = eval(&root, &move |s| functions.get(s).copied())?;
 
         assert_eq!(result, value);
         Ok(())
@@ -89,7 +90,7 @@ mod tests {
 
     #[test]
     fn eval_call_inside_object() -> Result<(), Error> {
-        let call: ValueCallFn = |v| return Ok(v.clone());
+        let call: ValueCallFn = &|v| return Ok(v.clone());
         let mut functions = HashMap::new();
         functions.insert("call".to_string(), call);
         let value = Value::Number(2);
@@ -101,7 +102,7 @@ mod tests {
             }),
         }]);
 
-        let result = eval(&root, &functions)?;
+        let result = eval(&root, &move |s| functions.get(s).copied())?;
 
         assert_eq!(
             result,

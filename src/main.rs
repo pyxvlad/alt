@@ -3,16 +3,14 @@
 #![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cargo_common_metadata)]
 
-use alt::parser;
-use alt::parser::parse;
-use std::collections::HashMap;
-use std::fmt::Display;
-use std::io;
-use std::io::BufRead;
-
 use alt::ast::Value;
 use alt::eval;
 use alt::lexer;
+use alt::parser;
+use alt::parser::parse;
+use std::fmt::Display;
+use std::io;
+use std::io::BufRead;
 
 #[derive(Debug)]
 enum Error {
@@ -20,6 +18,7 @@ enum Error {
     Eval(eval::Error),
     SerdeJson(serde_json::Error),
     NotName,
+    NotNumber,
 }
 
 impl Display for Error {
@@ -29,6 +28,7 @@ impl Display for Error {
             Self::Eval(err) => write!(f, "evaluation error: {err}"),
             Self::SerdeJson(err) => write!(f, "serde_json error: {err}"),
             Self::NotName => write!(f, "not a possible cat name"),
+            Self::NotNumber => write!(f, "not a number"),
         }
     }
 }
@@ -68,7 +68,6 @@ fn main() -> Result<(), Error> {
     println!("I parsed:");
 
     let object = parse(&tokens).or_else(|e| {
-
         let (left, _) = s.split_at(e.pos.start);
         let line = left.lines().count() - 1;
         if let Some(l) = s.lines().nth(line) {
@@ -90,7 +89,7 @@ fn main() -> Result<(), Error> {
 
     println!("== Doing Eval ==");
 
-    let call: eval::ValueCallFn = |x| match x {
+    let call: eval::ValueCallFn = &|x| match x {
         Value::String(s) => {
             let result = s.parse::<i32>();
             match result {
@@ -101,19 +100,27 @@ fn main() -> Result<(), Error> {
         _ => Ok(x.clone()),
     };
 
-    let pisoi: eval::ValueCallFn = |x| match x {
+    let pisoi: eval::ValueCallFn = &|x| match x {
         Value::String(_) => Ok(Value::Typed(alt::ast::Typed {
             kind: "pisoi".to_string(),
             value: Box::new(x.clone()),
         })),
         _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
     };
+    let itoa: eval::ValueCallFn = &|x| -> Result<Value, eval::Error> {
+        match x {
+            Value::Number(n) => Ok(Value::String(n.to_string())),
+            _ => Err(eval::Error::Eval(Box::new(Error::NotNumber))),
+        }
+    };
 
-    let mut functions = HashMap::new();
-    functions.insert("call".to_string(), call);
-    functions.insert("pisoi".to_string(), pisoi);
+    let value = eval::eval(&object, &|s| match s {
+        "call" => Some(call),
+        "pisoi" => Some(pisoi),
+        "itoa" => Some(itoa),
+        _ => None,
+    })?;
 
-    let value = eval::eval(&object, &functions)?;
     println!("{value:?}");
 
     println!("JSON Value:");
