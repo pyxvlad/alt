@@ -53,7 +53,7 @@ where
                 it.next();
                 if let Some(token) = it.peek() {
                     if token.kind == lexer::TokenKind::Dot {
-                        let token = token.clone();
+                        let token = *token;
                         it.next();
                         if let Some(token) = it.peek() {
                             match token.kind {
@@ -117,7 +117,7 @@ where
         }),
         Some(token) => match &token.kind {
             lexer::TokenKind::ID(id) => {
-                let token = token.clone();
+                let token = *token;
                 it.next();
 
                 if let Some(token) = it.peek() {
@@ -249,7 +249,7 @@ where
             }
             _ => Err(Error {
                 error: ErrorTypes::ExpectedIdentifier,
-                pos: token.pos.clone(),
+                pos: token.pos,
             }),
         },
     }

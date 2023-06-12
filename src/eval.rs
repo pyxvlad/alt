@@ -36,13 +36,10 @@ pub trait Evaluator {
                 let mut obj = Vec::new();
                 for record in object {
                     match record {
-                        RecordOrCall::Record(record) => obj.push(
-                            Record {
-                                id: record.id.clone(),
-                                value: self.eval(&record.value)?,
-                            }
-                            .into(),
-                        ),
+                        RecordOrCall::Record(record) => obj.push(Record {
+                            id: record.id.clone(),
+                            value: self.eval(&record.value)?,
+                        }),
                         RecordOrCall::Call(call) => {
                             let boxed = Box::new(self.eval(call.value.as_ref())?);
                             let optional = self.record_function_eval(&Call {
@@ -50,7 +47,7 @@ pub trait Evaluator {
                                 value: boxed,
                             })?;
                             if let Some(rec) = optional {
-                                obj.push(rec.into());
+                                obj.push(rec);
                             }
                         }
                     }
@@ -80,7 +77,7 @@ pub trait Evaluator {
     }
 }
 
-pub fn eval<'a, VF, RF>(
+pub fn eval<VF, RF>(
     root: &Value,
     value_functions: &mut VF,
     record_functions: &mut RF,
@@ -98,7 +95,7 @@ where
         rf: &'a mut TRF,
     }
 
-    impl<'a, TVF, TRF> Evaluator for T<'_, TVF, TRF>
+    impl<TVF, TRF> Evaluator for T<'_, TVF, TRF>
     where
         TVF: FnMut(&Call) -> Result<Value, Error>,
         TRF: FnMut(&Call) -> Result<Option<Record>, Error>,

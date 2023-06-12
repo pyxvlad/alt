@@ -1,7 +1,7 @@
 use crate::{
     ast::{Call, Record, Typed, Value},
     eval::{self, Error as EvalError},
-    Version, VERSION, parser,
+    parser, Version, VERSION,
 };
 use core::fmt;
 use std::error::Error as StdError;
@@ -16,7 +16,7 @@ enum Error {
     InvalidFunction(String),
     InvalidData(Value),
     Eval(EvalError),
-    Parse(parser::Error)
+    Parse(parser::Error),
 }
 
 impl fmt::Display for Error {
@@ -46,9 +46,9 @@ impl fmt::Display for Error {
 
 impl StdError for Error {}
 
-impl Into<EvalError> for Error {
-    fn into(self) -> EvalError {
-        EvalError::Eval(Box::new(self))
+impl From<Error> for EvalError {
+    fn from(value: Error) -> Self {
+        EvalError::Eval(Box::new(value))
     }
 }
 

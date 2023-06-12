@@ -1,6 +1,4 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery, clippy::cargo)]
-#![allow(clippy::cast_precision_loss)]
-#![allow(clippy::cast_possible_wrap)]
 #![allow(clippy::cargo_common_metadata)]
 
 use alt::ast::Record;
@@ -56,6 +54,73 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+struct T {
+    good_evaluator: goodies::Evaluator,
+}
+
+impl T {
+    fn call(x: &Value) -> Result<Value, eval::Error> {
+        match x {
+            Value::String(s) => {
+                let result = s.parse::<i32>();
+                match result {
+                    Ok(num) => Ok(Value::Number(num)),
+                    Err(err) => Err(eval::Error::Eval(Box::new(err))),
+                }
+            }
+            _ => Ok(x.clone()),
+        }
+    }
+    fn pisoi(x: &Value) -> Result<Value, eval::Error> {
+        match x {
+            Value::String(_) => Ok(Value::Typed(alt::ast::Typed {
+                kind: "pisoi".to_string(),
+                value: Box::new(x.clone()),
+            })),
+            _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
+        }
+    }
+    fn itoa(x: &Value) -> Result<Value, eval::Error> {
+        match x {
+            Value::Number(n) => Ok(Value::String(n.to_string())),
+            _ => Err(eval::Error::Eval(Box::new(Error::NotNumber))),
+        }
+    }
+
+    fn pisoi_record(x: &Value) -> Result<Option<Record>, eval::Error> {
+        match x {
+            Value::String(s) => Ok(Some(alt::ast::Record {
+                id: s.clone(),
+                value: Value::Typed(alt::ast::Typed {
+                    kind: "pisoi".to_string(),
+                    value: Box::new(x.clone()),
+                }),
+            })),
+            _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
+        }
+    }
+}
+
+impl Evaluator for T {
+    fn value_function_eval(&mut self, call: &alt::ast::Call) -> Result<Value, eval::Error> {
+        match call.function.as_str() {
+            "call" => Self::call(&call.value),
+            "pisoi" => Self::pisoi(&call.value),
+            "itoa" => Self::itoa(&call.value),
+            _ => self.good_evaluator.value_function_eval(call),
+        }
+    }
+
+    fn record_function_eval(
+        &mut self,
+        call: &alt::ast::Call,
+    ) -> Result<Option<Record>, eval::Error> {
+        match call.function.as_str() {
+            "pisoi" => Self::pisoi_record(&call.value),
+            _ => self.good_evaluator.record_function_eval(call),
+        }
+    }
+}
 fn main() -> Result<(), Error> {
     println!("Hello, world!");
 
@@ -69,12 +134,12 @@ fn main() -> Result<(), Error> {
     let tokens = lexer::tokenize(&s);
     println!("I parsed:");
 
-    let object = parse(&tokens).or_else(|e| {
+    let object = parse(&tokens).map_err(|e: parser::Error| {
         if s.lines().count() < 2 {
             println!("Syntax error:");
             println!("\t{e}");
 
-            return Err(e);
+            return e;
         }
         let (left, _) = s.split_at(e.pos.start);
         let line = left.lines().count() - 1;
@@ -85,88 +150,20 @@ fn main() -> Result<(), Error> {
             println!("\t{}^ {e}", " ".repeat(e.pos.start));
         }
 
-        Err(e)
+        e
     })?;
     if let Value::ObjectWithCalls(ref records) = object {
         println!("{records:?}");
 
         for ele in records {
-            println!("\t{:?}", ele);
+            println!("\t{ele:?}");
         }
     }
 
     println!("== Doing Eval ==");
 
-    struct T {
-        good_evaluator: goodies::Evaluator,
-    }
-
-    impl T {
-        fn call(x: &Value) -> Result<Value, eval::Error> {
-            match x {
-                Value::String(s) => {
-                    let result = s.parse::<i32>();
-                    match result {
-                        Ok(num) => Ok(Value::Number(num)),
-                        Err(err) => Err(eval::Error::Eval(Box::new(err))),
-                    }
-                }
-                _ => Ok(x.clone()),
-            }
-        }
-        fn pisoi(x: &Value) -> Result<Value, eval::Error> {
-            match x {
-                Value::String(_) => Ok(Value::Typed(alt::ast::Typed {
-                    kind: "pisoi".to_string(),
-                    value: Box::new(x.clone()),
-                })),
-                _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
-            }
-        }
-        fn itoa(x: &Value) -> Result<Value, eval::Error> {
-            match x {
-                Value::Number(n) => Ok(Value::String(n.to_string())),
-                _ => Err(eval::Error::Eval(Box::new(Error::NotNumber))),
-            }
-        }
-
-        fn pisoi_record(x: &Value) -> Result<Option<Record>, eval::Error> {
-            match x {
-                Value::String(s) => Ok(Some(alt::ast::Record {
-                    id: s.clone(),
-                    value: Value::Typed(alt::ast::Typed {
-                        kind: "pisoi".to_string(),
-                        value: Box::new(x.clone()),
-                    }),
-                })),
-                _ => Err(eval::Error::Eval(Box::new(Error::NotName))),
-            }
-        }
-    }
-
-    impl Evaluator for T {
-        fn value_function_eval(&mut self, call: &alt::ast::Call) -> Result<Value, eval::Error> {
-            match call.function.as_str() {
-                "call" => Self::call(&call.value),
-                "pisoi" => Self::pisoi(&call.value),
-                "itoa" => Self::itoa(&call.value),
-                _ => self.good_evaluator.value_function_eval(call),
-            }
-        }
-
-        fn record_function_eval(
-            &mut self,
-            call: &alt::ast::Call,
-        ) -> Result<Option<Record>, eval::Error> {
-            match call.function.as_str() {
-                "pisoi" => Self::pisoi_record(&call.value),
-                _ => self.good_evaluator.record_function_eval(call),
-            }
-        }
-    }
-
     let mut ev = T {
-        good_evaluator: Default::default(),
+        good_evaluator: goodies::Evaluator::default(),
     };
 
     let result = ev.eval(&object);
