@@ -11,7 +11,6 @@ use alt::goodies;
 use alt::lexer;
 use alt::parser;
 use alt::parser::parse;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::io;
 use std::io::BufRead;
@@ -71,6 +70,12 @@ fn main() -> Result<(), Error> {
     println!("I parsed:");
 
     let object = parse(&tokens).or_else(|e| {
+        if s.lines().count() < 2 {
+            println!("Syntax error:");
+            println!("\t{e}");
+
+            return Err(e);
+        }
         let (left, _) = s.split_at(e.pos.start);
         let line = left.lines().count() - 1;
         if let Some(l) = s.lines().nth(line) {

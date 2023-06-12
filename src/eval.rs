@@ -58,6 +58,14 @@ pub trait Evaluator {
 
                 Ok(Value::Object(obj))
             }
+            Value::Array(arr) => {
+                let mut values = Vec::new();
+                for val in arr {
+                    values.push(self.eval(val)?);
+                }
+
+                Ok(Value::Array(values))
+            }
             Value::Typed(t) => {
                 let value = self.eval(&t.value)?;
                 Ok(Value::Typed(Typed {
@@ -103,7 +111,10 @@ where
         }
     }
 
-    let mut t = T{vf: value_functions, rf: record_functions};
+    let mut t = T {
+        vf: value_functions,
+        rf: record_functions,
+    };
     t.eval(root)
 }
 

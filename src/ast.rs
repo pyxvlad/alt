@@ -8,6 +8,7 @@ pub enum Value {
     String(String),
     ObjectWithCalls(Vec<RecordOrCall>),
     Object(Vec<Record>),
+    Array(Vec<Value>),
     Call(Call),
     Typed(Typed),
 }
@@ -42,6 +43,7 @@ impl Serialize for Value {
                 unimplemented!("calls should be evaluated");
             }
             Self::Typed(t) => t.serialize(serializer),
+            Self::Array(a) => serializer.collect_seq(a.iter()),
         }
     }
 }

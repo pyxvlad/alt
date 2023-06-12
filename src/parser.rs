@@ -88,6 +88,11 @@ where
                 let records = parse_multiple_records(it, &lexer::TokenKind::RightBrace)?;
                 Ok(Value::ObjectWithCalls(records))
             }
+            lexer::TokenKind::LeftBracket => {
+                it.next();
+                let values = parse_multiple_values(it)?;
+                Ok(Value::Array(values))
+            }
             lexer::TokenKind::ValueCall => {
                 it.next();
                 let call = parse_call(it)?;
@@ -147,6 +152,38 @@ where
     }
 }
 
+fn parse_multiple_values<'a, T>(it: &mut Peekable<T>) -> Result<Vec<Value>, Error>
+where
+    T: Iterator<Item = &'a lexer::Token>,
+{
+    let mut values = Vec::new();
+    loop {
+        match it.peek() {
+            None => {
+                return Err(Error {
+                    error: ErrorTypes::EndOfInput,
+                    pos: Default::default(),
+                })
+            }
+            Some(token) => match token.kind {
+                lexer::TokenKind::RightBracket => {
+                    break;
+                }
+                lexer::TokenKind::EndOfInput => {
+                    break;
+                }
+                lexer::TokenKind::String(_) => {
+                    values.push(parse_value(it)?);
+                    it.next();
+                }
+                _ => values.push(parse_value(it)?),
+            },
+        }
+    }
+
+    Ok(values)
+}
+
 fn parse_multiple_records<'a, T>(
     it: &mut Peekable<T>,
     end: &lexer::TokenKind,
@@ -176,6 +213,12 @@ where
 
                 lexer::TokenKind::Separator => (),
                 _ if *end == token.kind => break,
+                lexer::TokenKind::EndOfInput => {
+                    return Err(Error {
+                        error: ErrorTypes::EndOfInput,
+                        pos: Default::default(),
+                    })
+                }
                 _ => todo!("{:?}", token),
             },
         };
@@ -280,6 +323,38 @@ mod tests {
                 value: Value::Number(2),
             }
             .into()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_values() -> Result<(), Error> {
+        let tokens = lexer::tokenize("2 \"asd\"");
+        println!("{tokens:?}");
+        let mut it = tokens.iter().peekable();
+        let array = parse_multiple_values(&mut it)?;
+
+        assert_eq!(
+            array,
+            vec![Value::Number(2), Value::String("asd".to_string())],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn parse_array() -> Result<(), Error> {
+        let tokens = lexer::tokenize("x = [1 2];");
+        println!("{tokens:?}");
+        let mut it = tokens.iter().peekable();
+        let array = parse_record(&mut it)?;
+
+        let RecordOrCall::Record(a) = array else { todo!()};
+
+        assert_eq!(
+            a.value,
+            Value::Array(vec![Value::Number(1), Value::Number(2),],),
         );
 
         Ok(())

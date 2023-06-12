@@ -13,6 +13,8 @@ pub enum TokenKind {
     Assign,
     LeftBrace,
     RightBrace,
+    LeftBracket,
+    RightBracket,
 
     Dot,
 
@@ -200,6 +202,7 @@ pub fn tokenize(s: &str) -> Vec<Token> {
                 });
                 continue;
             }
+
             '}' => {
                 it.next();
                 tokens.push(Token {
@@ -208,6 +211,30 @@ pub fn tokenize(s: &str) -> Vec<Token> {
                         end: pos + 1,
                     },
                     kind: TokenKind::RightBrace,
+                });
+                continue;
+            }
+
+            '[' => {
+                it.next();
+                tokens.push(Token {
+                    pos: FilePos {
+                        start: pos,
+                        end: pos + 1,
+                    },
+                    kind: TokenKind::LeftBracket,
+                });
+                continue;
+            }
+
+            ']' => {
+                it.next();
+                tokens.push(Token {
+                    pos: FilePos {
+                        start: pos,
+                        end: pos + 1,
+                    },
+                    kind: TokenKind::RightBracket,
                 });
                 continue;
             }
@@ -381,5 +408,27 @@ mod tests {
                 TokenKind::EndOfInput,
             ],
         );
+    }
+
+    #[test]
+    fn brackets() {
+        let data = "x = [1 2 3]";
+
+        assert_eq!(
+            tokenize(data)
+                .iter()
+                .map(|t| t.kind.clone())
+                .collect::<Vec<TokenKind>>(),
+            [
+                TokenKind::ID("x".to_string()),
+                TokenKind::Assign,
+                TokenKind::LeftBracket,
+                TokenKind::Number(1),
+                TokenKind::Number(2),
+                TokenKind::Number(3),
+                TokenKind::RightBracket,
+                TokenKind::EndOfInput,
+            ]
+        )
     }
 }
